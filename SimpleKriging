@@ -1,0 +1,89 @@
+'''
+Simple Kriging using any number of known and unknown points
+
+Assumption: Let us assume that the empirical semivariogram is represented
+by the linear regression line with Y intercept = 0 and slope = 4.0
+'''
+
+__author__ = "François d'Entremont"
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Define the data in the form of a list of tuples
+# k for known points xyz and u for unknown points xy
+k = np.array([(3.00, 4.00, 120), (6.30, 3.40, 103.00), (2.00, 1.30, 142)])
+u = np.array([(3.00, 3.00)])
+
+
+def distance(p1, p2):
+    '''
+    This function calculates the distance between two points.
+    Keyword arguments:
+    p1, p2 (tuple, list): coordinate with x and y as first and second indices. 
+    '''
+    return ((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)**(1/2)
+
+distance_matrix = np.zeros((len(k), len(k))) # Creating empty matrix
+for i in range(len(k)): # Looping through the k rows of the matrix
+    for j in range(len(k)): # Looping through the elements in each row
+        distance_matrix[i, j] = distance(k[i], k[j])
+
+semivariance_matrix = 4*distance_matrix
+
+distance_to_unknowns = np.zeros((len(u), len(k))) # Creating empty matrix
+for i in range(len(u)):
+    for j in range(len(k)):
+        distance_to_unknowns[i, j] = distance(u[i], k[j])
+
+semivariance_to_unknowns = 4*distance_to_unknowns
+
+# Assembling Gamma and appending Lagrange multipliers
+# by adding ones to the right side and bottom and then
+# setting the diagonal to zeros
+gamma = np.append(semivariance_matrix, np.ones(
+    [semivariance_matrix.shape[0], len(u)]), axis=1)
+gamma = np.append(gamma, np.ones([len(u), gamma.shape[1]]), axis=0)
+np.fill_diagonal(gamma, 0)
+
+# Assembling vector Beta and appending Lagrange multipliers
+beta = np.append(semivariance_to_unknowns, np.ones([len(u),len(u)]), axis=1).transpose()
+
+# Calculating lambda: 
+lambda_vector = np.matmul(np.linalg.inv(gamma), beta)
+
+# Finding the variance
+variance = np.zeros([len(u), 1])
+for i in range(len(u)):
+    for j in range(len(k)):
+        variance[i][0] += lambda_vector[j][i]*semivariance_to_unknowns[i][j]
+# Finding the standard error
+std_error = np.sqrt(variance)
+
+# Assembling results vector containing elevations for unknown points
+# and printing the results in the console
+results = np.zeros([len(u), 1])
+for i in range(len(u)):
+    for j in range(len(k)):
+        results[i][0] += lambda_vector[j][i]*k[j][2] 
+    print(f'Point u_{i} has elevation {results[i][0]} with ' +
+          f'a variance of {variance[i][0]}, a standard error of ' +
+          f'{std_error[i][0]}, and a 95% CI of ' +
+          f'({results[i][0] - 1.96*std_error[i][0]}, ' +
+          f'{results[i][0] + 1.96*std_error[i][0]})')
+
+# Plotting the results
+x_known = [point[0] for point in k]
+y_known = [point[1] for point in k]
+x_unknown = [point[0] for point in u]
+y_unknown = [point[1] for point in u]
+plt.scatter(x_known, y_known)
+plt.scatter(x_unknown, y_unknown, color='red')
+plt.title('Scatterplot of x vs y')
+plt.xlabel("x")
+plt.ylabel("y", rotation='horizontal')
+for i in range(len(k)): #adding elevation labels for known points
+    plt.annotate(k[i][2], (k[i][0],k[i][1])) 
+for i in range(len(u)): #adding elevation labels for unknown points
+    plt.annotate(round(results[i][0], 2), (u[i][0],u[i][1]))
+plt.show()
